@@ -1,14 +1,13 @@
+---
+title: PipelineRx
+emoji: 🔧
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+---
+
 # PipelineRx
-
-| Item | Value |
-|---|---|
-| Docker image tag | pipelinerx |
-| Build command | `docker build -t pipelinerx .` |
-| Run command | `docker run -p 7860:7860 pipelinerx` |
-| Exposed port | 7860 |
-| SDK | docker |
-
---- 
 
 PipelineRx is an OpenEnv-compatible diagnostic environment for identifying and repairing common data-pipeline faults in tabular data. The environment exposes an HTTP API (FastAPI) that agents use to reset episodes, inspect data, apply repair actions, and receive graded rewards. The objective for agents is to maximize a task-specific quality score while avoiding destructive or incorrect repairs.
 
