@@ -15,12 +15,6 @@ An AI agent interacts with a FastAPI server to observe corrupted pandas DataFram
 
 ---
 
-## Motivation
-
-Silent data pipeline failures — type drift, null injection, duplicate rows, unit mismatches — are the #1 source of production ML model degradation. PipelineRx provides a controlled, deterministic sandbox where RL agents learn to diagnose and fix these issues through a standard HTTP API.
-
----
-
 ## Quick Start
 
 ### Docker (recommended)
