@@ -378,18 +378,159 @@ PipelineRx/
 		├── task1_null_sweep.py
 		├── task2_type_drift.py
 		├── task3_duplicate_drift.py
-		├── task4_unit_mismatch.py
-		└── task5_pipeline_cascade.py
-```
+		PipelineRx
 
-## Contributing
+		PipelineRx is an OpenEnv-compatible reinforcement learning environment designed to simulate common data pipeline failures and the repairs that restore data quality. Agents interact with a FastAPI server over HTTP to inspect corrupted pandas DataFrames, apply repair actions, and receive dense rewards based on objective data-quality metrics.
 
-Contributions are welcome. Recommended steps:
+		Environment description
 
-1. Open an issue describing the change you propose.
-2. Create a feature branch and add tests for new behavior.
-3. Submit a pull request with a clear description of the change.
+		- Interface: HTTP API (FastAPI) exposing endpoints used by agents and validators. Typical workflow: POST /reset to start an episode, then loop POST /step to apply actions and receive observations and rewards.
+		- Episodes: Deterministic and reproducible for a chosen task seed. Each episode ends when the agent issues the `finish` action or the episode reaches the task-specific step budget.
+		- Grader: Each task includes a reference grader that computes a final quality score in the range 0.0 to 1.0. The grader evaluates repaired data against task-specific objectives such as null reduction, correct dtype conversions, duplicate elimination, and unit consistency.
 
-## License
+		Action space
 
-This project is released under the MIT License.
+		Actions are submitted as JSON to POST /step. Every action must include an `action_type` field. Optional fields depend on the action type.
+
+		Common fields
+
+		- `action_type` (string): one of `fill_nulls`, `cast_column`, `drop_column`, `deduplicate`, `convert_units`, `inspect`, `finish`.
+		- `column` (string, optional): name of the column the action targets when applicable.
+		- `params` (object, optional): additional parameters required by the action.
+
+		Action descriptions
+
+		- `fill_nulls`
+			- Required: `column`, `params.strategy` (one of `median`, `mode`, `forward_fill`, `zero`).
+			- Behavior: Impute missing values in the specified column according to the strategy.
+
+		- `cast_column`
+			- Required: `column`, `params.dtype` (one of `float64`, `int64`, `bool`, `datetime`).
+			- Behavior: Attempt to cast the column to the target dtype. Parsing failures may create nulls and affect reward.
+
+		- `drop_column`
+			- Required: `column`.
+			- Behavior: Remove the column from the dataset. Destructive operation; penalized if critical information is lost.
+
+		- `deduplicate`
+			- Required: `params.key_columns` (list of column names). Optional `params.keep` (`first` or `last`).
+			- Behavior: Drop duplicate rows determined by the key columns.
+
+		- `convert_units`
+			- Required: `column`, `params.conversion` or `params.source_region` to guide conversion.
+			- Behavior: Convert numeric values from one unit system to a consistent target unit.
+
+		- `inspect`
+			- No additional fields required.
+			- Behavior: Re-compute and return the current observation without changing data. Consumes one step.
+
+		- `finish`
+			- No additional fields required.
+			- Behavior: End the episode and trigger final grading.
+
+		Observation space
+
+		The environment returns a JSON observation after each step. Key fields are:
+
+		- `step` (int): Current step index starting at 0.
+		- `max_steps` (int): Episode budget for the active task.
+		- `task_name` (string): Active task identifier.
+		- `task_description` (string): Human-readable description of the task.
+		- `shape` (array): [rows, cols] of the current DataFrame.
+		- `columns` (array[string]): Column names present in the DataFrame.
+		- `column_stats` (object): Mapping from column name to a stats object. Typical stats include `null_count`, `null_pct`, `dtype`, `mean`, `std`, `min`, `max`, `unique_count`, and `examples` (a few sample values).
+		- `sample_rows` (array[object]): Small sample of row dictionaries to aid diagnosis.
+		- `last_action_result` (string): One of `success`, `invalid_column`, `no_op`, `error`.
+		- `last_action_error` (string|null): Error message when applicable.
+		- `quality_score` (float): Current task-specific quality metric between 0.0 and 1.0.
+
+		Setup and usage
+
+		Docker (recommended)
+
+		```bash
+		docker build -t pipelinerx .
+		docker run -p 7860:7860 pipelinerx
+		```
+
+		Local (developer)
+
+		```bash
+		pip install -r requirements.txt
+		uvicorn server.main:app --host 0.0.0.0 --port 7860
+		```
+
+		Verify the server
+
+		```bash
+		curl http://localhost:7860/health
+		```
+
+		Start an episode
+
+		```bash
+		curl -X POST http://localhost:7860/reset -H "Content-Type: application/json" -d '{"task_name":"null_sweep"}'
+		```
+
+		Apply an action example
+
+		```bash
+		curl -X POST http://localhost:7860/step -H "Content-Type: application/json" -d '{"action_type":"fill_nulls","column":"sensor_value","params":{"strategy":"median"}}'
+		```
+
+		Running the reference agent
+
+		The repository includes `inference.py`, a reference script that runs all tasks with an LLM-driven policy. The script expects environment variables for the inference client.
+
+		Bash example
+
+		```bash
+		export API_BASE_URL="https://your-inference-endpoint/v1"
+		export HF_TOKEN="hf_..."
+		export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
+		export ENV_URL="http://localhost:7860"
+		python inference.py
+		```
+
+		PowerShell example
+
+		```powershell
+		$env:API_BASE_URL = 'https://your-inference-endpoint/v1'
+		$env:HF_TOKEN = 'hf_...'
+		$env:MODEL_NAME = 'Qwen/Qwen2.5-72B-Instruct'
+		$env:ENV_URL = 'http://localhost:7860'
+		python inference.py
+		```
+
+		Validator compatibility
+
+		- Do not hardcode API credentials. The reference `inference.py` is designed to use environment-injected credentials so hosted validators can observe requests.
+		- The server exposes `/metadata` and `/schema` endpoints to support OpenEnv runtime checks.
+
+		Project layout
+
+		```
+		PipelineRx/
+		├── Dockerfile
+		├── openenv.yaml
+		├── pyproject.toml
+		├── requirements.txt
+		├── inference.py
+		├── README.md
+		└── server/
+				├── main.py
+				├── env.py
+				├── models.py
+				├── graders.py
+				└── tasks/
+						├── base.py
+						├── task1_null_sweep.py
+						├── task2_type_drift.py
+						├── task3_duplicate_drift.py
+						├── task4_unit_mismatch.py
+						└── task5_pipeline_cascade.py
+		```
+
+		License
+
+		This project is licensed under the MIT License.
