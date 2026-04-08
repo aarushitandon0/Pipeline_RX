@@ -149,7 +149,7 @@ Example (truncated)
 
 Each task seeds a deterministic corruption into a clean reference dataset. A task provides a `task_description`, a step budget, and a grader that computes a quality score between 0.0 and 1.0. Below are concise but detailed descriptions for each task including objective, typical corruptions, what the grader checks, recommended strategies, and example actions.
 
-### null_sweep
+### Task 1: null_sweep
 
 Objective
 
@@ -185,7 +185,7 @@ Edge cases
 - Sentinel strings mixed with valid values require cautious cleaning to avoid removing valid categories.
 - Low-cardinality numeric columns may be better treated as categorical for imputation.
 
-### type_drift
+### Task 2: type_drift
 
 Objective
 
@@ -221,7 +221,7 @@ Edge cases
 - Very heterogeneous timestamp formats may require splitting into multiple parse attempts.
 - Converting numerics to integers can truncate or round values; consider `float64` when unsure.
 
-### duplicate_drift
+### Task 3: duplicate_drift
 
 Objective
 
@@ -255,7 +255,7 @@ Edge cases
 
 - Near-duplicates that differ by a small floating timestamp or by non-key fields require custom heuristics.
 
-### unit_mismatch
+### Task 4: unit_mismatch
 
 Objective
 
@@ -289,7 +289,7 @@ Edge cases
 
 - Mixed units and legitimate outliers may be hard to disambiguate automatically; prefer conservative conversions with validation.
 
-### pipeline_cascade
+### Task 5: pipeline_cascade
 
 Objective
 
