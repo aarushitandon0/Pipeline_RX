@@ -1,3 +1,12 @@
+---
+title: PipelineRx
+emoji: 🔧
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+---
+
 # PipelineRx 🔧
 
 **OpenEnv-compliant reinforcement learning environment for diagnosing and repairing broken data pipelines.**
