@@ -31,8 +31,6 @@ from openai import OpenAI
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-API_BASE_URL: str = os.environ["API_BASE_URL"]
-API_KEY: str = os.environ["API_KEY"]
 MODEL_NAME: str = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_URL: str = os.getenv("ENV_URL", "http://localhost:8000")
 BENCHMARK: str = "pipelinerx"
@@ -54,7 +52,8 @@ MAX_STEPS: Dict[str, int] = {
 TEMPERATURE: float = 0.2
 MAX_TOKENS: int = 300
 
-client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+# Client is lazily initialised in call_llm() so env vars are read at runtime
+_client: Optional[OpenAI] = None
 
 # ---------------------------------------------------------------------------
 # STDOUT protocol helpers  (exactly matching the mandatory format)
@@ -203,8 +202,46 @@ def parse_action(text: str) -> Dict[str, Any]:
 
 def call_llm(user_prompt: str) -> str:
     """Send a chat-completion request and return the assistant content."""
+    global _client
+    if _client is None:
+        # Read the proxy URL and key from whichever env var the validator sets.
+        # Precedence: API_BASE_URL > OPENAI_BASE_URL  (same for key).
+        base_url = (
+            os.environ.get("API_BASE_URL")
+            or os.environ.get("OPENAI_BASE_URL")
+            or ""
+        )
+        api_key = (
+            os.environ.get("API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or "no-key"
+        )
+        print(
+            f"[DEBUG] ENV DUMP: API_BASE_URL={os.environ.get('API_BASE_URL')!r} "
+            f"API_KEY={os.environ.get('API_KEY', '')[:8]}*** "
+            f"OPENAI_BASE_URL={os.environ.get('OPENAI_BASE_URL')!r} "
+            f"OPENAI_API_KEY={os.environ.get('OPENAI_API_KEY', '')[:8]}***",
+            file=sys.stderr,
+            flush=True,
+        )
+        print(
+            f"[DEBUG] Resolved: base_url={base_url!r} api_key={api_key[:8]}***",
+            file=sys.stderr,
+            flush=True,
+        )
+        # Also set the OPENAI_ env vars so the SDK picks them up internally.
+        if base_url:
+            os.environ["OPENAI_BASE_URL"] = base_url
+        if api_key and api_key != "no-key":
+            os.environ["OPENAI_API_KEY"] = api_key
+        _client = OpenAI(base_url=base_url, api_key=api_key)
     try:
-        response = client.chat.completions.create(
+        print(
+            f"[DEBUG] Calling LLM model={MODEL_NAME}",
+            file=sys.stderr,
+            flush=True,
+        )
+        response = _client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -214,9 +251,11 @@ def call_llm(user_prompt: str) -> str:
             max_tokens=MAX_TOKENS,
             stream=False,
         )
+        print("[DEBUG] LLM call succeeded", file=sys.stderr, flush=True)
         return response.choices[0].message.content or ""
     except Exception as exc:
-        print(f"[DEBUG] LLM request failed: {exc}", file=sys.stderr, flush=True)
+        print(f"[DEBUG] LLM request FAILED: {exc}", file=sys.stderr, flush=True)
+        traceback.print_exc(file=sys.stderr)
         return '{"action_type": "inspect"}'
 
 
