@@ -10,9 +10,9 @@ STDOUT FORMAT (per task):
     [END]   success=<true|false> steps=<n> score=<0.00> rewards=<r1,r2,...,rn>
 
 Required env vars:
-    API_BASE_URL   – OpenAI-compatible endpoint (default: https://router.huggingface.co/v1)
+    API_BASE_URL   – OpenAI-compatible endpoint (injected by validator)
+    API_KEY        – API key for the endpoint (injected by validator)
     MODEL_NAME     – model id (default: Qwen/Qwen2.5-72B-Instruct)
-    HF_TOKEN       – bearer token
 """
 
 from __future__ import annotations
@@ -31,9 +31,9 @@ from openai import OpenAI
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-API_BASE_URL: str = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
-API_KEY: str = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or "dummy"
-MODEL_NAME: str = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+API_BASE_URL: str = os.environ["API_BASE_URL"]
+API_KEY: str = os.environ["API_KEY"]
+MODEL_NAME: str = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_URL: str = os.getenv("ENV_URL", "http://localhost:8000")
 BENCHMARK: str = "pipelinerx"
 
