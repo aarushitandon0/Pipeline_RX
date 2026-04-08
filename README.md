@@ -194,13 +194,134 @@ Action payloads follow a simple JSON shape with `action_type`, `column` (when ap
 
 ## Included tasks
 
-The environment contains five tasks with increasing difficulty. Each task defines an initial corruption, an objective quality metric, and a step budget.
+The environment contains five tasks with increasing difficulty. Each task includes an initial corruption pattern, a clear objective, observable diagnostics, and a recommended set of repair actions. The reference grader for each task computes a quality score in the range 0.0 to 1.0. Below are detailed descriptions intended to help agents and human evaluators understand the intent and evaluation criteria for each task.
 
-- `null_sweep` - fix null values in a dataset (easy, max_steps 8)
-- `type_drift` - correct mixed or incorrect dtypes (medium, max_steps 10)
-- `duplicate_drift` - deduplicate a CDC-replayed event log (medium, max_steps 10)
-- `unit_mismatch` - resolve regional unit mismatches (hard, max_steps 12)
-- `pipeline_cascade` - repair multiple failure modes in sequence (very hard, max_steps 15)
+
+### null_sweep
+
+- Difficulty: Easy
+- Max steps: 8
+
+Initial corruption
+- Random and targeted null injections across numeric and categorical columns. Some columns use sentinel values that should be interpreted as missing (for example -999 or 'unknown').
+
+Objective
+- Restore meaningful values where possible so that per-column null rates fall below task thresholds and a downstream quality metric (imputation-aware accuracy) improves.
+
+Observation clues
+- High null counts in specific columns shown in `column_stats`
+- Presence of sentinel values in `sample_rows`
+- Quality score initially low due to null-related penalties
+
+Recommended actions
+- `fill_nulls` with strategy selected per column (median for continuous data, mode for categorical, forward_fill for time series)
+- `drop_column` when a column is mostly missing and not required by the task
+- `inspect` to re-check before expensive operations
+
+Reward summary and evaluation
+- The grader rewards reductions in null fraction and penalizes imputations that increase distributional mismatch (for example, filling all values with global mean when a column is multimodal).
+- Final quality is evaluated by a composite metric that considers null rate, distributional similarity to a clean reference, and whether sentinel values remain.
+
+
+### type_drift
+
+- Difficulty: Medium
+- Max steps: 10
+
+Initial corruption
+- Columns contain mixed types or have been coerced incorrectly during ingestion. Examples include numeric-looking strings, timestamps as integers, and categorical labels encoded as floats.
+
+Objective
+- Convert columns to semantically correct dtypes while minimizing information loss and preserving value semantics.
+
+Observation clues
+- `column_stats` shows dtype inconsistencies and counts of parseable values
+- `sample_rows` reveals formatting issues such as trailing characters or multiple date formats
+
+Recommended actions
+- `cast_column` to appropriate dtype after validation (for dates use datetime parse with multiple format guesses)
+- `fill_nulls` may be needed after casting if parsing fails for some rows
+- `inspect` to verify downstream numeric statistics after a cast
+
+Reward summary and evaluation
+- The grader rewards correct dtype conversion and penalizes casts that produce many nulls or nonsensical values.
+- Evaluation considers downstream metrics such as numeric range plausibility, number of parsing errors introduced, and whether categorical value sets are preserved.
+
+
+### duplicate_drift
+
+- Difficulty: Medium
+- Max steps: 10
+
+Initial corruption
+- The dataset contains duplicate records from CDC-style replays, partial duplicate rows, and near-duplicates where only a timestamp or minor field differs.
+
+Objective
+- Remove duplicate records while preserving legitimate repeated events and maintaining causal order when required by the task.
+
+Observation clues
+- Identical or near-identical `sample_rows`
+- `column_stats` may show repeated keys or anomalously high counts for identifiers
+
+Recommended actions
+- `deduplicate` with appropriate `key_columns` to identify true duplicates
+- Use `inspect` to confirm deduplication reduced duplicates without dropping unique events
+- If duplicates are time-delayed repairs, consider `cast_column` on timestamp fields to align formats before deduplication
+
+Reward summary and evaluation
+- The grader rewards precision and recall of duplicate elimination: removing duplicates without dropping unique events.
+- Final quality considers the reduction in duplicate ratio and the preservation of expected event counts or aggregates.
+
+
+### unit_mismatch
+
+- Difficulty: Hard
+- Max steps: 12
+
+Initial corruption
+- Numeric columns hold values from different unit systems (for example, a mix of centimeters and inches or Celsius and Fahrenheit) introduced during regional merges. Units are not explicitly labeled.
+
+Objective
+- Detect unit inconsistencies and convert values to a consistent target unit for downstream correctness.
+
+Observation clues
+- Statistical anomalies in `column_stats` such as bimodal distributions and outlier clusters
+- `sample_rows` may reveal context columns like `region` or `units` that help infer units
+
+Recommended actions
+- `convert_units` for the affected column, specifying `source_region` or using inferred heuristics
+- `inspect` to validate that summary statistics align after conversion
+- `drop_column` if a column is irrecoverably ambiguous and not required
+
+Reward summary and evaluation
+- The grader measures how well conversions align the column distribution with a clean reference. Rewards increase when aggregates and value ranges match expected units.
+- Partial credit is given for reducing variance introduced by mixed units even if exact mapping is imperfect.
+
+
+### pipeline_cascade
+
+- Difficulty: Very Hard
+- Max steps: 15
+
+Initial corruption
+- A cascade of multiple failure modes occurring in one dataset. Examples include null injections, type drift, duplicate events, and unit mismatches combined. The correct repair sequence matters: fixing the wrong issue first can mask or worsen other problems.
+
+Objective
+- Identify the full set of faults and apply a sequence of repairs that leads to a high overall quality score. The agent must reason about ordering and trade-offs between actions.
+
+Observation clues
+- Mixed indicators from the other tasks: high null rates, dtype inconsistencies, duplicate keys, and multimodal numeric distributions
+- `task_description` and `column_stats` contain the richest clues for diagnosis
+
+Recommended actions
+- Use `inspect` frequently to re-evaluate the state after each repair
+- Combine `fill_nulls`, `cast_column`, `deduplicate`, and `convert_units` as appropriate
+- Prefer conservative operations early (for example, `inspect` and light imputation) then apply stronger transformations once the fault sources are isolated
+
+Reward summary and evaluation
+- The grader awards a composite quality score that aggregates the per-fault metrics. High scores require both correct repairs and an efficient action sequence.
+- The environment penalizes unnecessary destructive actions such as dropping many columns or overly aggressive fills that reduce information content.
+
 
 ## Running the reference agent
 
@@ -260,6 +381,14 @@ PipelineRx/
 		├── task4_unit_mismatch.py
 		└── task5_pipeline_cascade.py
 ```
+
+## Contributing
+
+Contributions are welcome. Recommended steps:
+
+1. Open an issue describing the change you propose.
+2. Create a feature branch and add tests for new behavior.
+3. Submit a pull request with a clear description of the change.
 
 ## License
 
