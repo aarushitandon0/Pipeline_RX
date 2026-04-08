@@ -29,12 +29,12 @@ import requests
 from openai import OpenAI
 
 # ---------------------------------------------------------------------------
-# Configuration  (matches canonical OpenEnv examples: finqa, kernrl, coding)
+# Configuration  (matches mandatory sample inference.py pattern exactly)
 # ---------------------------------------------------------------------------
-API_BASE_URL: str = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-API_KEY: str = os.getenv("API_KEY") or os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY") or ""
-MODEL_NAME: str = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-ENV_URL: str = os.getenv("ENV_URL", "http://localhost:8000")
+API_KEY: str = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or ""
+API_BASE_URL: str = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME: str = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+ENV_URL: str = os.getenv("ENV_URL") or "http://localhost:7860"
 BENCHMARK: str = "pipelinerx"
 
 TASKS: List[str] = [
@@ -53,17 +53,6 @@ MAX_STEPS: Dict[str, int] = {
 }
 TEMPERATURE: float = 0.2
 MAX_TOKENS: int = 300
-
-# Initialise the OpenAI-compatible client exactly like canonical OpenEnv examples.
-# When the validator runs inference.py, it injects API_BASE_URL and API_KEY
-# pointing to their LiteLLM proxy.  We read those above and pass them here.
-print(
-    f"[DEBUG] OpenAI client init: API_BASE_URL={API_BASE_URL!r} "
-    f"API_KEY={API_KEY[:8] + '***' if API_KEY else '(empty)'}",
-    file=sys.stderr,
-    flush=True,
-)
-client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
 # ---------------------------------------------------------------------------
 # STDOUT protocol helpers  (exactly matching the mandatory format)
@@ -210,7 +199,7 @@ def parse_action(text: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def call_llm(user_prompt: str) -> str:
+def call_llm(client: OpenAI, user_prompt: str) -> str:
     """Send a chat-completion request and return the assistant content."""
     try:
         response = client.chat.completions.create(
@@ -260,7 +249,7 @@ def env_state() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def run_task(task_name: str) -> None:
+def run_task(client: OpenAI, task_name: str) -> None:
     """Run one task end-to-end, emitting [START], [STEP]…, [END]."""
     max_steps = MAX_STEPS.get(task_name, 10)
     rewards: List[float] = []
@@ -277,7 +266,7 @@ def run_task(task_name: str) -> None:
 
         while not done and steps_taken < max_steps:
             user_prompt = build_user_prompt(obs, steps_taken + 1, max_steps)
-            raw_response = call_llm(user_prompt)
+            raw_response = call_llm(client, user_prompt)
             action = parse_action(raw_response)
             action_str = json.dumps(action, separators=(",", ":"))
 
@@ -354,8 +343,9 @@ def run_task(task_name: str) -> None:
 
 
 def main() -> None:
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
     for task_name in TASKS:
-        run_task(task_name)
+        run_task(client, task_name)
 
 
 if __name__ == "__main__":
